@@ -2,9 +2,13 @@ import tensorflow as tf
 import numpy as np 
 from numba import jit
 import random
+"""
+the first 6 function are inspired by papers -------
+<On estimating conditional quantiles and distribution functions>
+I'm sorry but I will not explain them very much [for my poor English ......]
+"""
 def sigmoid(x):
     return 1.0/(1.0+np.exp(-x))
-
 def tf_characteristic(x):
     return tf.nn.relu(tf.sign(x))
 
@@ -15,9 +19,9 @@ def fai_loss(y,fai_j,yj,yi):
     #yi == y_j-1
     lo = tf.reduce_mean( tf_characteristic(y-yi)*(-tf_characteristic(yj-y)*fai_j + tf.log(1 + tf.exp(fai_j)) ) )
     return tf.exp(lo)
+
 def fai2lambda(fai):
     return sigmoid(fai)
-
 def eta2s(eta):
     return 1 - sigmoid(eta)
 
@@ -41,10 +45,14 @@ def generate_F_list(eta0,fai_array):
     ln_s = np.log(s0)+ tmp_array
     F_array = 1 - np.exp(ln_s)
     return F_array
+
 @jit
 def expectation(F_array,anchor):
     #
     # 0.0 should be in anchor
+    # F_array: shape = [n_batch, len(anchor) ]
+    # return : shape = [n_batch] or [n_batch,1]
+    # return the expectation of n_batch distributions
     value = np.zeros(shape=(F_array.shape[0],))
     for i in range(1,len(anchor)):
         f, y = F_array[:,i],anchor[i]
@@ -95,7 +103,12 @@ class distribution_model():
         self._init_variables()
     
     def _build_network(self,n_seq,n_feature):
-
+        """
+        use features we generate two elements:
+        self.eta0: only 1 value
+        self.fai_list: len(list)=len(anchor) - 1
+        you might not need loss_li
+        """
         self.xp = tf.placeholder(dtype=tf.float32,shape=[None,n_seq,n_feature])
         self.yp = tf.placeholder(dtype=tf.float32,shape=[None,1])
         net = self._generate_feature()
@@ -110,6 +123,11 @@ class distribution_model():
             self.fai_list.append(fai_tmp)
 
     def _generate_feature(self):
+        """
+        the net's input is self.xp
+        the output tensor shape can be: [ n_batch, _dim ]
+        the user can modify this function to get better features
+        """
         net = tf.layers.flatten(self.xp)
         net = tf.layers.dense(net,128,tf.nn.relu)
         net = tf.layers.dense(net,128,tf.nn.relu)
@@ -141,6 +159,10 @@ class distribution_model():
         return self.sess.run(fetches,{self.xp:x,self.yp:y})[0]
 
     def predict_distribution(self,x):
+        """
+        note fai_li shape: [len(anchor)-1, n_batch]
+        so before we give it to <generate_F_list>, it should be tranposed
+        """
         fetches = [self.eta0,self.fai_list]
         eta, fai_li = self.sess.run(fetches,{self.xp:x})
         fai_li = np.reshape(np.array(fai_li),
@@ -149,6 +171,8 @@ class distribution_model():
 
     def predict_value(self,x):
         F_list = self.predict_distribution(x)
+        # random choose a batch of input data
+        # write the predicted distribution for debugging
         r = random.randint(1,40)
         if r == 2:
             np.savetxt("f.npx",F_list)
